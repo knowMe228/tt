@@ -610,7 +610,159 @@ run linux.enumerate.my_module  # для модуля энумерации
 run linux.implant.my_implant   # для модуля импланта
 ```
 
-## 16. Заключение
+## 16. Документация по основным API модулям
+
+### 16.1. pwncat.commands
+Этот модуль реализует парсер команд, лексер, подсветку и т.д. для pwncat. Каждая команда определяется как отдельный модуль под pwncat/commands, который определяет класс Command, наследующийся от pwncat.commands.CommandDefinition.
+
+```python
+from pwncat.commands import CommandDefinition, Parameter, Complete
+
+class Command(CommandDefinition):
+    """ Комментарии к документации команды помещаются в docstring """
+    
+    PROG = "custom"
+    ARGS = {
+        "--option,-o": Parameter(Complete.NONE, help="information", action="store_true"),
+        "positional": Parameter(
+            Complete.CHOICES,
+            metavar="POSITIONAL",
+            choices=["hello", "world"],
+            help="help information",
+        ),
+    }
+
+    def run(self, manager: "pwncat.manager.Manager", args: "argparse.Namespace"):
+        manager.log("we ran a custom command!")
+```
+
+### 16.2. pwncat.config
+Модуль для работы с конфигурацией pwncat. Конфигурация pwncat не является свободной. Есть определенный набор известных имен конфигурации, которые можно установить, и каждая из них имеет определенный тип. Проверка типов осуществляется при присваивании путем выполнения вызываемого объекта, используемого в качестве типа для данной конфигурации. Типы конфигурации, как правило, хорошо справляются с преобразованием строк из интерактивной строки ввода в допустимые значения для изменяемой конфигурации. Если преобразование невозможно, возникает ValueError.
+
+```python
+from pwncat.config import Config
+
+# Получение значения
+value = session.config.get('name', default_value)
+
+# Установка значения
+session.config.set('name', value)
+```
+
+### 16.3. pwncat.db
+Пакет определяет все объекты базы данных. Внутри pwncat использует базу данных ZODB, которая хранит данные в виде постоянных объектов Python. Каждый класс, определенный в этом пакете, является постоянным Python-классом, который хранится как есть в базе данных. Дополнительную информацию о создании постоянных классов см. в документации ZODB.
+
+```python
+from pwncat.db import Fact
+
+class MyFact(Fact):
+    def __init__(self, source, types):
+        super().__init__(types=types, source=source)
+        # Дополнительные атрибуты
+```
+
+### 16.4. pwncat.facts
+Модуль содержит общие факты, используемые для стандартных перечислений. Некоторые типы фактов используются для нескольких платформ, поэтому они были выделены сюда. В общем, вам не нужно использовать эти типы, за исключением случаев, когда вы взаимодействуете с данными, возвращенными модулем перечисления.
+
+```python
+from pwncat.facts import ArchData, DistroVersionData, EscalationReplace, EscalationSpawn
+
+# Примеры специфичных для платформы фактов
+from pwncat.facts.linux import LinuxUser, LinuxGroup
+from pwncat.facts.windows import WindowsUser, WindowsGroup
+
+# Факты способностей
+from pwncat.facts.ability import ExecuteAbility, FileReadAbility, FileWriteAbility
+```
+
+### 16.5. pwncat.gtfobins
+Модуль предоставляет абстрактный интерфейс к базе данных GTFOBins. База данных GTFOBins сопоставляет бинарные файлы со специальными разрешениями, которые могут быть использованы для эскалации привилегий (и не только). Внутри pwncat использует эту базу данных для идентификации способов чтения/записи файлов, а также при эскалации с помощью таких бинарных файлов, как SETUID и правила sudo.
+
+```python
+from pwncat.gtfobins import Capability, Stream
+
+# Использование GTFOBins для поиска способов выполнения действий
+binary = session.platform.gtfo.find_binary('/bin/sh', Capability.SHELL)
+```
+
+### 16.6. pwncat.manager
+Менеджер - это ядро объекта в pwncat. Менеджер отвечает за поддержание конфигурации, состояние терминала и поддержание всех активных сессий pwncat. Менеджер может иметь ноль или более активных сессий в любое время.
+
+```python
+from pwncat.manager import Manager, InteractiveExit
+
+# Использование менеджера
+with Manager() as manager:
+    session = manager.create_session(platform="linux", host="192.168.1.1", port=4444)
+```
+
+### 16.7. pwncat.modules
+Модули pwncat - это расширяемая функция pwncat. Они предоставляют способ для пользователей эффективно выполнять сценарии взаимодействия с целями из локального терминала. Самая обширная функция - это модули перечисления, позволяющие пользователям быстро собирать полезную информацию с цели и сохранять данные в базе данных для последующего доступа.
+
+```python
+from pwncat.modules import BaseModule, Argument, Status, ModuleFailed
+from pwncat.modules.enumerate import EnumerateModule, Schedule
+from pwncat.modules.implant import ImplantModule
+```
+
+### 16.8. pwncat.platform
+Платформа - это абстракция pwncat для ОС или конкретного дистрибутива. В общем, это позволяет pwncat в общем смысле взаимодействовать с целями на уровне ОС. Например, платформа предоставляет реализацию pathlib.Path, обеспечивающую беспрепятственный доступ к файлам. Платформа также определяет способы запроса переменных окружения, получения ID текущего пользователя и имени, а также общего запуска процессов.
+
+```python
+from pwncat.platform import Platform
+from pwncat.platform.linux import Linux
+from pwncat.platform.windows import Windows
+
+# Платформо-специфичные классы
+path = session.platform.Path("/etc/passwd")
+```
+
+### 16.9. pwncat.subprocess
+Модуль предоставляет абстракцию для выполнения подпроцессов на удаленной системе.
+
+```python
+from pwncat.subprocess import Popen, PIPE, CompletedProcess
+
+# Выполнение команды асинхронно
+proc = session.platform.Popen(["command"], stdout=subprocess.PIPE)
+stdout, stderr = proc.communicate()
+```
+
+### 16.10. pwncat.target
+Цель - это структура данных, хранящаяся в ZODB. Она содержит все перечисленные факты, установленные импланты, уникальный ID, последний идентифицированный удаленный адрес и другую информацию, необходимую для идентификации или взаимодействия с целью через сессии pwncat.
+
+```python
+from pwncat.target import Target
+
+# Доступ к цели из сессии
+target = session.target
+```
+
+### 16.11. pwncat.util
+Различные вспомогательные методы и классы, которые не подходят ни в один другой модуль или пакет.
+
+```python
+from pwncat.util import Access, Init, State, random_string, human_readable_size
+
+# Классы доступа
+access = Access.READ | Access.WRITE
+
+# Вспомогательные функции
+random_str = random_string(10)
+size_str = human_readable_size(1024*1024*5)
+```
+
+### 16.12. pwncat.facts.tamper
+Tampers (изменения) - это модификации, которые мы сознательно внесли в целевой хост. pwncat отслеживает изменения, где это возможно, чтобы предупреждать пользователя о внесенных изменениях и в некоторых случаях обеспечивать возможность отката этих изменений.
+
+```python
+from pwncat.facts.tamper import CreatedFile, ReplacedFile, CreatedDirectory
+
+# Примеры tampers
+tamper = CreatedFile(source="my_module", uid=0, path="/tmp/test.txt")
+```
+
+## 17. Заключение
 
 Разработка модулей для pwncat-vl позволяет значительно расширить функциональность фреймворка. Следуя шаблонам, описанным в этом руководстве, вы можете создавать собственные модули для выполнения практически любых задач на целевой системе, от простой энумерации до сложных манипуляций с системой и установки персистента.
 
